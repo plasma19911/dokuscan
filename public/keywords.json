@@ -1,0 +1,12 @@
+{
+  "Rechnung": ["rechnung", "rechnungsnummer", "rechnungsbetrag", "zahlbar bis", "umsatzsteuer-id", "netto", "rechnungsdatum"],
+  "Kontoauszug": ["kontoauszug", "kontostand", "buchungstext", "iban", "saldo", "bic"],
+  "Vertrag": ["vertrag", "vertragspartner", "kündigungsfrist", "vertragslaufzeit", "vertragsbeginn", "unterschrift"],
+  "Versicherung": ["versicherung", "versicherungsschein", "versicherungsnummer", "police", "schadensfall", "beitragsrechnung"],
+  "Arztbrief": ["diagnose", "befund", "arztbrief", "patient", "rezept", "medikament", "praxis"],
+  "Gehaltsabrechnung": ["gehaltsabrechnung", "lohnabrechnung", "bruttogehalt", "nettogehalt", "sozialversicherung", "lohnsteuer"],
+  "Steuerbescheid": ["steuerbescheid", "finanzamt", "steuernummer", "einkommensteuer", "steuererklärung"],
+  "Behoerdenschreiben": ["amt für", "behörde", "bescheid", "aktenzeichen", "widerspruch", "frist bis"],
+  "Kassenbon": ["kassenbon", "quittung", "beleg", "mwst", "eur", "kasse"],
+  "Garantie": ["garantie", "garantieschein", "gewährleistung", "kaufbeleg", "seriennummer"]
+}
