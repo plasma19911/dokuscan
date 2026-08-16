@@ -1,0 +1,17 @@
+{
+  "name": "dokuscan-cloudflare",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Privater Dokumenten- und Fotoscanner für Cloudflare Pages. Scans bleiben vollständig im Browser.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "pdf-lib": "1.17.1",
+    "tesseract.js": "5.1.1",
+    "tesseract.js-core": "5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
