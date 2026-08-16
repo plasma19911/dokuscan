@@ -1,9 +1,11 @@
-// DokuScan-Erweiterung: Mehrfachauswahl + speichersparende Seiten + Qualitätsmodus.
-// Läuft vollständig im Browser und verwendet keine Netzwerk-Uploads.
+// DokuScan-Erweiterung: unbegrenzte Stapelauswahl + lokaler Temp-Speicher + Qualitätsmodus.
+// Keine künstliche Seitenbegrenzung. Praktische Grenze sind nur Browser-/Geräteressourcen.
 (() => {
-  const MAX_BATCH = 30;
   const MAX_PAGE_DIMENSION = 3000;
   const PAGE_JPEG_QUALITY = 0.92;
+  const THUMB_MAX_DIMENSION = 320;
+  const TEMP_DB_NAME = 'dokuscan-temp-pages';
+  const TEMP_STORE_NAME = 'pages';
 
   const batchInput = document.getElementById('batchInput');
   const batchAddBtn = document.getElementById('batchAddBtn');
@@ -17,30 +19,146 @@
 
   if (!batchInput || !batchAddBtn) return;
 
-  // Die vorhandene Scannerlogik ruft estimateOutputSize(..., 2000) auf.
-  // Für alle neuen Scans verwenden wir stattdessen bis zu 3000 px an der längsten Kante.
+  // Die bestehende Scannerlogik übergibt 2000 px. Wir erzwingen den Qualitätsmodus mit 3000 px.
   const originalEstimateOutputSize = DokuCrop.estimateOutputSize.bind(DokuCrop);
   DokuCrop.estimateOutputSize = (quadPoints) => originalEstimateOutputSize(quadPoints, MAX_PAGE_DIMENSION);
 
-  // Verarbeitete Seiten als JPEG-Blob statt als großes Canvas im RAM halten.
-  // Die bestehenden Funktionen werden so erweitert, dass sowohl alte Canvas-Seiten
-  // als auch neue Blob-Seiten funktionieren.
+  // ------------------------------------------------------- Temporärer Seitenspeicher
+  // Große JPEG-Seiten werden nach dem Zuschneiden in IndexedDB ausgelagert.
+  // Im RAM bleibt nur eine kleine Vorschau und die Seiten-Metadaten.
+  let tempDbPromise = null;
   const trackedPreviewUrls = new Set();
+  let storageWarning = '';
+  let hadPagesLastRender = false;
+
+  function openTempDb() {
+    if (tempDbPromise) return tempDbPromise;
+    tempDbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(TEMP_DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(TEMP_STORE_NAME)) {
+          db.createObjectStore(TEMP_STORE_NAME, { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return tempDbPromise;
+  }
+
+  async function putTempPage(id, blob) {
+    const db = await openTempDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(TEMP_STORE_NAME, 'readwrite');
+      tx.objectStore(TEMP_STORE_NAME).put({ id, blob });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Temporärer Seitenspeicher abgebrochen.'));
+    });
+  }
+
+  async function getTempPage(id) {
+    const db = await openTempDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(TEMP_STORE_NAME, 'readonly');
+      const req = tx.objectStore(TEMP_STORE_NAME).get(id);
+      req.onsuccess = () => resolve(req.result?.blob || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function deleteTempPage(id) {
+    if (!id) return;
+    try {
+      const db = await openTempDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(TEMP_STORE_NAME, 'readwrite');
+        tx.objectStore(TEMP_STORE_NAME).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.warn('Temporäre Seite konnte nicht gelöscht werden:', err);
+    }
+  }
+
+  async function clearTempPages() {
+    try {
+      const db = await openTempDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(TEMP_STORE_NAME, 'readwrite');
+        tx.objectStore(TEMP_STORE_NAME).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.warn('Temporärer Seitenspeicher konnte nicht geleert werden:', err);
+    }
+  }
+
+  const startupCleanupPromise = clearTempPages();
+
+  async function updateStorageWarning() {
+    storageWarning = '';
+    try {
+      if (!navigator.storage?.estimate) return;
+      const { usage = 0, quota = 0 } = await navigator.storage.estimate();
+      if (!quota) return;
+      const free = Math.max(0, quota - usage);
+      const freeMb = free / (1024 * 1024);
+      const usedRatio = usage / quota;
+      if (freeMb < 250 || usedRatio > 0.9) {
+        storageWarning = ` ⚠️ Wenig lokaler Speicher frei (${Math.max(0, Math.round(freeMb))} MB).`;
+      }
+    } catch (err) {
+      console.warn('Speicherstatus nicht verfügbar:', err);
+    }
+  }
+
+  async function makeThumbnailBlob(canvas) {
+    const longest = Math.max(canvas.width, canvas.height);
+    const scale = Math.min(1, THUMB_MAX_DIMENSION / Math.max(1, longest));
+    const thumb = document.createElement('canvas');
+    thumb.width = Math.max(1, Math.round(canvas.width * scale));
+    thumb.height = Math.max(1, Math.round(canvas.height * scale));
+    thumb.getContext('2d').drawImage(canvas, 0, 0, thumb.width, thumb.height);
+    return canvasToBlob(thumb, 'image/jpeg', 0.7);
+  }
 
   const getPageBlob = async (page) => {
+    if (page.tempId) {
+      const stored = await getTempPage(page.tempId);
+      if (stored) return stored;
+    }
     if (page.blob) return page.blob;
     if (page.canvas) return canvasToBlob(page.canvas, 'image/jpeg', PAGE_JPEG_QUALITY);
     throw new Error('Seite enthält keine Bilddaten.');
   };
 
-  const convertPageToBlob = async (page) => {
-    if (!page || page.blob || !page.canvas) return;
-    const blob = await canvasToBlob(page.canvas, 'image/jpeg', PAGE_JPEG_QUALITY);
+  const convertPageToStored = async (page) => {
+    if (!page || page.tempId || page.blob || !page.canvas) return;
+
+    await startupCleanupPromise;
+    const fullBlob = await canvasToBlob(page.canvas, 'image/jpeg', PAGE_JPEG_QUALITY);
+    const thumbBlob = await makeThumbnailBlob(page.canvas);
+    const tempId = `page-${page.id || `${Date.now()}-${Math.random()}`}`;
+
     page.width = page.canvas.width;
     page.height = page.canvas.height;
-    page.blob = blob;
-    page.previewUrl = URL.createObjectURL(blob);
+    page.previewUrl = URL.createObjectURL(thumbBlob);
     trackedPreviewUrls.add(page.previewUrl);
+
+    try {
+      await putTempPage(tempId, fullBlob);
+      page.tempId = tempId;
+    } catch (err) {
+      // Kein Datenverlust: wenn IndexedDB voll/gesperrt ist, bleibt die komprimierte Seite als Blob im RAM.
+      console.warn('IndexedDB-Temporärspeicher nicht verfügbar, nutze RAM-Fallback:', err);
+      page.blob = fullBlob;
+      storageWarning = ' ⚠️ Lokaler Temp-Speicher ist nicht verfügbar; große Stapel können mehr RAM benötigen.';
+    }
+
     page.canvas.width = 1;
     page.canvas.height = 1;
     page.canvas = null;
@@ -48,7 +166,7 @@
 
   const convertPagesFrom = async (startIndex) => {
     for (let i = Math.max(0, startIndex); i < pages.length; i++) {
-      await convertPageToBlob(pages[i]);
+      await convertPageToStored(pages[i]);
     }
   };
 
@@ -69,7 +187,6 @@
       const thumb = document.createElement('img');
       if (page.previewUrl) {
         thumb.src = page.previewUrl;
-        trackedPreviewUrls.add(page.previewUrl);
       } else if (page.canvas) {
         thumb.src = page.canvas.toDataURL('image/jpeg', 0.62);
       }
@@ -97,6 +214,13 @@
 
     pageBadge.textContent = `${pages.length} ${pages.length === 1 ? 'Seite' : 'Seiten'}`;
     finishBtn.disabled = pages.length === 0;
+
+    if (pages.length > 0) {
+      hadPagesLastRender = true;
+    } else if (hadPagesLastRender) {
+      hadPagesLastRender = false;
+      clearTempPages();
+    }
   };
 
   removePage = function removePageOptimized(idx) {
@@ -105,6 +229,7 @@
       URL.revokeObjectURL(removed.previewUrl);
       trackedPreviewUrls.delete(removed.previewUrl);
     }
+    if (removed?.tempId) deleteTempPage(removed.tempId);
     renderPages();
   };
 
@@ -156,7 +281,7 @@
     return new Blob([pdfBytes], { type: 'application/pdf' });
   };
 
-  // Nach jeder bestätigten Seite wird das große Canvas sofort in einen Blob umgewandelt.
+  // Nach jeder bestätigten Seite wird das große Canvas sofort lokal ausgelagert.
   let confirmStartCount = 0;
   cropConfirmBtn.addEventListener('click', () => {
     confirmStartCount = pages.length;
@@ -168,6 +293,7 @@
       if (pages.length <= before) return;
       try {
         await convertPagesFrom(before);
+        if ((pages.length % 10) === 0) await updateStorageWarning();
         renderPages();
       } catch (err) {
         console.warn('Speicheroptimierung fehlgeschlagen:', err);
@@ -181,6 +307,7 @@
   });
 
   // ---------------------------------------------------------- Mehrfachauswahl
+  // Keine feste Seitenzahl: jede vom Browser/Dateidialog gelieferte Bilddatei wird nacheinander verarbeitet.
   let batchQueue = [];
   let batchState = null;
 
@@ -195,24 +322,23 @@
     batchInput.click();
   });
 
-  batchInput.addEventListener('change', () => {
+  batchInput.addEventListener('change', async () => {
     const chosen = Array.from(batchInput.files || []);
     batchInput.value = '';
     if (!chosen.length) return;
 
     const valid = chosen.filter(looksLikeImage);
-    const selected = valid.slice(0, MAX_BATCH);
-    if (!selected.length) {
+    if (!valid.length) {
       statusEl.textContent = 'Bitte Bilddateien auswählen.';
       return;
     }
 
-    batchQueue = selected;
+    await updateStorageWarning();
+    batchQueue = valid;
     batchState = {
-      total: selected.length,
+      total: valid.length,
       done: 0,
-      skipped: 0,
-      truncated: valid.length > MAX_BATCH || chosen.length > MAX_BATCH,
+      skipped: chosen.length - valid.length,
     };
     addPageBtn.disabled = true;
     batchAddBtn.disabled = true;
@@ -226,8 +352,7 @@
     batchQueue = [];
     addPageBtn.disabled = false;
     batchAddBtn.disabled = false;
-    const extra = state.truncated ? ` Maximal ${MAX_BATCH} Bilder pro Stapel wurden verarbeitet.` : '';
-    statusEl.textContent = `Stapel fertig: ${state.done} von ${state.total} Seiten übernommen${state.skipped ? `, ${state.skipped} übersprungen` : ''}.${extra}`;
+    statusEl.textContent = `Stapel fertig: ${state.done} von ${state.total} Bildseiten übernommen${state.skipped ? `, ${state.skipped} nicht verwendbare/übersprungene Dateien` : ''}.${storageWarning}`;
   };
 
   function openNextBatchImage() {
@@ -238,14 +363,8 @@
     }
 
     const file = batchQueue.shift();
-    const current = batchState.done + batchState.skipped + 1;
-    statusEl.textContent = `Stapel: Bild ${current} von ${batchState.total} – Ecken prüfen und übernehmen.`;
-
-    if (!looksLikeImage(file)) {
-      batchState.skipped += 1;
-      openNextBatchImage();
-      return;
-    }
+    const current = batchState.total - batchQueue.length;
+    statusEl.textContent = `Stapel: Bild ${current} von ${batchState.total} – Ecken prüfen und übernehmen.${storageWarning}`;
 
     const img = new Image();
     pendingObjectUrl = URL.createObjectURL(file);
@@ -253,7 +372,7 @@
     img.onerror = () => {
       batchState.skipped += 1;
       cleanupPendingImage();
-      statusEl.textContent = `Bild ${current} konnte nicht geöffnet werden. Fahre mit dem Stapel fort.`;
+      statusEl.textContent = `Bild ${current} konnte nicht geöffnet werden. Fahre mit dem Stapel fort.${storageWarning}`;
       openNextBatchImage();
     };
     img.src = pendingObjectUrl;
@@ -263,6 +382,10 @@
     if (!batchState) return;
     batchState.skipped += 1;
     setTimeout(openNextBatchImage, 0);
+  });
+
+  window.addEventListener('pagehide', () => {
+    for (const url of trackedPreviewUrls) URL.revokeObjectURL(url);
   });
 
   renderPages();
