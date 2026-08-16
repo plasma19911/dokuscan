@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b5cff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="DokuScan">
+  <title>DokuScan – Privater Scanner</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="app-header">
+  <div class="brand">
+    <img src="/icons/icon-192.png" alt="" class="brand-icon">
+    <div>
+      <h1>DokuScan</h1>
+      <span>Privater Dokumenten- & Fotoscanner</span>
+    </div>
+  </div>
+  <button id="installBtn" class="ghost-btn hidden" type="button">Installieren</button>
+</header>
+
+<main>
+  <section class="privacy-card" aria-label="Datenschutz">
+    <div class="privacy-icon">🔒</div>
+    <div>
+      <strong>Deine Scans bleiben auf deinem Gerät.</strong>
+      <p>Fotos, OCR-Text und PDFs werden nicht zu Cloudflare, GitHub oder einer anderen Cloud hochgeladen. Die Website liefert nur die Scanner-Software aus.</p>
+    </div>
+  </section>
+
+  <section id="captureSection">
+    <div class="section-title-row">
+      <div>
+        <h2>Neues Dokument</h2>
+        <p class="hint">Seiten fotografieren, Ecken anpassen und als PDF speichern.</p>
+      </div>
+      <span id="pageBadge" class="badge">0 Seiten</span>
+    </div>
+
+    <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+    <button id="addPageBtn" class="primary" type="button">📷 Seite fotografieren / Bild wählen</button>
+
+    <div id="pageList" class="page-list"></div>
+
+    <label class="field-label" for="manualType">Dokumentenart</label>
+    <select id="manualType" class="select-input">
+      <option value="">Automatisch erkennen</option>
+    </select>
+    <p class="hint compact">Bei manueller Auswahl wird die OCR übersprungen. Das ist schneller und spart Akku.</p>
+
+    <label class="check-card">
+      <input id="keepLocalCopy" type="checkbox">
+      <span>
+        <strong>Lokale Kopie in der App-Bibliothek behalten</strong>
+        <small>Optional. Die PDF liegt dann zusätzlich in diesem Browser (IndexedDB), niemals auf dem Server.</small>
+      </span>
+    </label>
+
+    <button id="finishBtn" class="primary" type="button" disabled>✅ PDF erstellen</button>
+    <p id="status" class="status-text" aria-live="polite"></p>
+  </section>
+
+  <section id="resultSection" class="result-card hidden">
+    <div class="result-icon">✓</div>
+    <div class="result-copy">
+      <h2>PDF ist fertig</h2>
+      <p id="resultName" class="filename"></p>
+      <p class="hint">Jetzt bestimmst du den Ablageort. Auf unterstützten Geräten öffnet sich „Speichern unter“ oder das Teilen-Menü.</p>
+    </div>
+    <div class="result-actions">
+      <button id="savePdfBtn" class="primary" type="button">💾 Speichern unter / Teilen</button>
+      <button id="discardPdfBtn" class="ghost-btn" type="button">PDF aus Arbeitsspeicher entfernen</button>
+    </div>
+  </section>
+
+  <section id="listSection">
+    <div class="section-title-row">
+      <div>
+        <h2>Lokale Bibliothek</h2>
+        <p class="hint">Nur Dokumente, für die du oben die lokale Kopie aktiviert hast.</p>
+      </div>
+      <span class="device-only">Nur dieses Gerät</span>
+    </div>
+    <div id="docList" class="doc-list"></div>
+  </section>
+
+  <section class="info-card">
+    <h2>Als Handy-App nutzen</h2>
+    <p class="hint">Android/Chrome: Menü → „Zum Startbildschirm hinzufügen“ bzw. „App installieren“. iPhone/Safari: Teilen → „Zum Home-Bildschirm“.</p>
+  </section>
+</main>
+
+<div id="cropModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Dokument zuschneiden">
+  <div class="crop-wrap">
+    <img id="cropImage" alt="Aufgenommenes Dokument">
+    <svg id="cropOverlay" aria-label="Zuschneidepunkte"></svg>
+  </div>
+  <div class="crop-controls">
+    <div class="filter-row">
+      <button data-filter="color" class="filter-btn active" type="button">Farbe</button>
+      <button data-filter="gray" class="filter-btn" type="button">Graustufen</button>
+      <button data-filter="bw" class="filter-btn" type="button">Schwarz/Weiß</button>
+    </div>
+    <button id="cropConfirmBtn" class="primary" type="button">✂️ Zuschneiden & übernehmen</button>
+    <button id="cropCancelBtn" class="ghost-btn dark" type="button">Abbrechen</button>
+  </div>
+</div>
+
+<div id="processingOverlay" class="modal hidden" role="status" aria-live="polite">
+  <div class="processing-box">
+    <div class="spinner"></div>
+    <p id="processingText">Verarbeite …</p>
+    <small>Die Verarbeitung läuft lokal auf diesem Gerät.</small>
+  </div>
+</div>
+
+<script src="/vendor/tesseract/tesseract.min.js"></script>
+<script src="/vendor/pdf-lib/pdf-lib.min.js"></script>
+<script src="/lib/crop.js"></script>
+<script src="/lib/storage.js"></script>
+<script src="/lib/classify.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
