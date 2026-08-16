@@ -1,4 +1,4 @@
-const CACHE = 'dokuscan-shell-v5';
+const CACHE = 'dokuscan-shell-v6';
 const SHELL = [
   '/', '/index.html', '/style.css', '/app.js', '/batch.js', '/keywords.json',
   '/lib/crop.js', '/lib/storage.js', '/lib/classify.js',
