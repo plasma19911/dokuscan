@@ -46,8 +46,8 @@
     <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
     <input type="file" id="batchInput" accept="image/*" multiple hidden>
     <button id="addPageBtn" class="primary" type="button">📷 Seite fotografieren / einzelnes Bild</button>
-    <button id="batchAddBtn" class="ghost-btn batch-btn" type="button">🗂️ Mehrere Bilder als Stapel auswählen</button>
-    <p class="hint compact">Stapel: bis zu 30 Bilder gleichzeitig auswählen. Die Seiten werden der Reihe nach zum Zuschneiden geöffnet und anschließend platzsparend im Arbeitsspeicher gehalten.</p>
+    <button id="batchAddBtn" class="ghost-btn dark" type="button">🗂️ Mehrere Bilder als Stapel auswählen</button>
+    <p class="hint compact">Stapel: bis zu 30 Bilder gleichzeitig auswählen. Die Seiten werden der Reihe nach zum Zuschneiden geöffnet. Qualitätsmodus: bis zu 3.000 Pixel an der längsten Dokumentkante (bei A4 etwa 257 dpi).</p>
 
     <div id="pageList" class="page-list"></div>
 
@@ -129,5 +129,6 @@
 <script src="/lib/storage.js"></script>
 <script src="/lib/classify.js"></script>
 <script src="/app.js"></script>
+<script src="/batch.js"></script>
 </body>
 </html>
